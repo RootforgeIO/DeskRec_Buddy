@@ -1,0 +1,7 @@
+dxcam==0.3.0
+SoundCard==0.4.5
+imageio-ffmpeg==0.6.0
+numpy==1.26.4
+cffi==2.1.1
+comtypes==1.4.17
+pycparser==3.11
