@@ -19,9 +19,9 @@ if (ROOT / "vendor").is_dir():
     sys.path.insert(0, str(ROOT / "vendor"))
 
 from recorder import CaptureOptions, CaptureSession, QUALITY, devices, estimate_bytes, format_size, recover_pending_recordings
-from windows_support import StopHotkey, keep_on_top, work_area
+from windows_support import StopHotkey, keep_on_top, work_area, show_in_taskbar, minimize_to_taskbar, is_minimized
 from product import APP_NAME, VERSION, PUBLISHER
-from runtime_support import settings_path, create_desktop_shortcut, configure_logging, InstanceGuard
+from runtime_support import settings_path, ensure_first_launch_shortcut, configure_logging, InstanceGuard
 
 SETTINGS_PATH = settings_path()
 MICROPHONE_GAINS = ("100%", "150%", "200%", "300%", "400%")
@@ -222,12 +222,17 @@ class SelectionFrame:
 
 
 class RecordingOverlay(SelectionFrame):
-    width, height = 340, 58
+    width, height = 392, 58
 
     def __init__(self, app: "DeskRecApp") -> None:
         super().__init__(app, color="#f06464")
         x1, y1, x2, y2 = app.region
         self.bar = Toplevel(app)
+        self.bar.title("DeskRec Buddy — панель записи")
+        try:
+            self.bar.iconbitmap(str(ROOT / "assets" / "deskrec-buddy.ico"))
+        except TclError:
+            pass
         self.bar.overrideredirect(True)
         self.bar.attributes("-topmost", True)
         self.bar.attributes("-alpha", 0.9)
@@ -239,10 +244,13 @@ class RecordingOverlay(SelectionFrame):
         self.hint = StopHotkey.label if app.stop_hotkey and app.stop_hotkey.available else "Стоп — также в окне на панели задач"
         self.label = ttk.Label(self.bar, text="● 00:00 · 0 МБ", foreground="#ff6969",
                                background="#102238", font=("Segoe UI", 9, "bold"))
-        self.label.pack(side="left", padx=10)
         self.stop_button = ttk.Button(self.bar, text="Стоп", command=app.stop_recording)
         self.stop_button.pack(side="right", padx=6, pady=5)
+        self.minimize_button = ttk.Button(self.bar, text="—", width=3, command=self.minimize)
+        self.minimize_button.pack(side="right", pady=5)
+        self.label.pack(side="left", padx=10)
         exclude_from_capture(self.bar)
+        show_in_taskbar(self.bar)
         keep_on_top(self.bar, detach=True)
         self.windows.append(self.bar)
         self.last_raised = 0.0
@@ -250,13 +258,20 @@ class RecordingOverlay(SelectionFrame):
         self.bar.bind("<ButtonPress-1>", self.begin_drag)
         self.bar.bind("<B1-Motion>", self.drag)
         self.bar.bind("<ButtonRelease-1>", self.end_drag)
+        if app.panel_minimized:
+            self.minimize()
+
+    def minimize(self):
+        self.drag_origin = None
+        self.app.panel_minimized = True
+        minimize_to_taskbar(self.bar)
 
     def clamp_position(self, x, y):
         left, top, right, bottom = work_area(self.app)
         return max(left, min(right-self.width, x)), max(top, min(bottom-self.height, y))
 
     def begin_drag(self, event):
-        if event.widget is self.stop_button:
+        if event.widget in (self.stop_button, self.minimize_button):
             self.drag_origin = None
             return
         self.drag_origin = (event.x_root, event.y_root, self.bar.winfo_x(), self.bar.winfo_y())
@@ -278,13 +293,21 @@ class RecordingOverlay(SelectionFrame):
 
     def update(self, seconds: int, bytes_used: int) -> None:
         self.label.configure(text=f"● {seconds//60:02d}:{seconds%60:02d} · {format_size(bytes_used)}\n{self.hint}")
+        minimized = is_minimized(self.bar)
+        if minimized:
+            self.app.panel_minimized = True
+        elif self.app.panel_minimized:
+            self.app.panel_minimized = False
+            exclude_from_capture(self.bar)
         if time.monotonic() - self.last_raised > 0.5:
             self.last_raised = time.monotonic()
-            x, y = self.clamp_position(self.bar.winfo_x(), self.bar.winfo_y())
-            if (x, y) != (self.bar.winfo_x(), self.bar.winfo_y()):
-                self.bar.geometry(f"+{x}+{y}")
+            if not minimized:
+                x, y = self.clamp_position(self.bar.winfo_x(), self.bar.winfo_y())
+                if (x, y) != (self.bar.winfo_x(), self.bar.winfo_y()):
+                    self.bar.geometry(f"+{x}+{y}")
             for window in self.windows:
-                keep_on_top(window, detach=True)
+                if window is not self.bar or not minimized:
+                    keep_on_top(window, detach=True)
 
 class DeskRecApp(Tk):
     def __init__(self) -> None:
@@ -300,6 +323,7 @@ class DeskRecApp(Tk):
         self.region: tuple[int, int, int, int] | None = None
         self.session: CaptureSession | None = None
         self.overlay: RecordingOverlay | None = None
+        self.panel_minimized = False
         self.selection_frame: SelectionFrame | None = None
         self.picker: RegionPicker | None = None
         self.stop_hotkey = None
@@ -378,10 +402,8 @@ class DeskRecApp(Tk):
             row=9, column=0, columnspan=3, sticky="w")
         self.start_button = ttk.Button(frame, text="Начать запись", style="Accent.TButton", command=self.start_recording)
         self.start_button.grid(row=10, column=0, columnspan=3, sticky="ew", pady=(17, 0))
-        ttk.Button(frame, text="Ярлык на рабочем столе", command=self.make_shortcut).grid(
-            row=11, column=0, columnspan=2, sticky="w", pady=(10, 0))
         ttk.Label(frame, text=f"v{VERSION} · {PUBLISHER}", foreground="#668091", font=("Segoe UI", 9)).grid(
-            row=11, column=2, sticky="e", pady=(10, 0))
+            row=11, column=0, columnspan=3, sticky="e", pady=(10, 0))
         frame.columnconfigure(1, weight=1)
         self.update_estimate()
 
@@ -432,17 +454,6 @@ class DeskRecApp(Tk):
         except OSError:
             logging.exception("Cannot save settings")
             self.status_var.set("Не удалось запомнить настройки; выбранные параметры действуют до закрытия")
-
-    def make_shortcut(self):
-        if not getattr(sys, "frozen", False):
-            messagebox.showinfo(APP_NAME, "Создание ярлыка доступно в собранной версии приложения.")
-            return
-        try:
-            name = create_desktop_shortcut()
-            messagebox.showinfo(APP_NAME, f"Ярлык создан на рабочем столе:\n{name}")
-        except Exception as exc:
-            logging.exception("Cannot create desktop shortcut")
-            messagebox.showerror(APP_NAME, str(exc))
 
     def report_callback_exception(self, exc_type, exc_value, traceback):
         logging.error("UI callback failed", exc_info=(exc_type, exc_value, traceback))
@@ -579,6 +590,7 @@ class DeskRecApp(Tk):
                     self.start_button.configure(text="Стоп и сохранить", command=self.stop_recording, state="normal")
                     self.title("DeskRec Buddy — идёт запись")
                     self.iconify()
+                    self.panel_minimized = False
                     self.overlay = RecordingOverlay(self)
                     self.status_var.set(f"Идёт запись · {StopHotkey.label} — остановить\nMP4: {self.session.output_path}")
                 elif kind == "stop_requested":
@@ -650,17 +662,6 @@ class DeskRecApp(Tk):
 def main():
     make_dpi_aware()
     configure_logging()
-    if sys.argv[1:2] == ["--create-shortcut"]:
-        try:
-            name = create_desktop_shortcut()
-            if "--quiet" not in sys.argv:
-                ctypes.windll.user32.MessageBoxW(None, f"На рабочем столе создан ярлык:\n{name}", APP_NAME, 0x40)
-        except Exception as exc:
-            logging.exception("Shortcut command failed")
-            if "--quiet" not in sys.argv:
-                ctypes.windll.user32.MessageBoxW(None, str(exc), APP_NAME, 0x10)
-            return 1
-        return 0
     if sys.argv[1:2] == ["--smoke"]:
         import argparse
         import soundcard as sc
@@ -686,6 +687,12 @@ def main():
             if not guard.acquired:
                 ctypes.windll.user32.MessageBoxW(None, "DeskRec Buddy уже запущен. Откройте его через панель задач.\nОстановка записи: Ctrl+Shift+F9.", APP_NAME, 0x40)
                 return 0
+            def prepare_shortcut():
+                try:
+                    ensure_first_launch_shortcut()
+                except Exception:
+                    logging.exception("Cannot create first-launch desktop shortcut")
+            threading.Thread(target=prepare_shortcut, daemon=True).start()
             DeskRecApp().mainloop()
         finally:
             guard.close()

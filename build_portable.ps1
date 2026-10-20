@@ -32,7 +32,6 @@ Copy-Item -LiteralPath 'README.md','THIRD_PARTY.md','CHANGELOG.md' -Destination 
 New-Item -ItemType Directory -Path 'dist\DeskRec Buddy\assets' -Force | Out-Null
 Copy-Item -LiteralPath 'assets\deskrec-buddy.svg' -Destination 'dist\DeskRec Buddy\assets'
 Set-Content -LiteralPath 'dist\DeskRec Buddy\portable.flag' -Value 'DeskRec Buddy portable: settings are stored next to the EXE.' -Encoding ascii
-Copy-Item -LiteralPath 'packaging\Create Desktop Shortcut.cmd' -Destination 'dist\DeskRec Buddy'
 & $buildPython tools\collect_licenses.py
 if ($LASTEXITCODE -ne 0) { throw 'License collection failed.' }
 if (-not $SkipArchive) {

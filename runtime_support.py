@@ -72,6 +72,26 @@ $shortcut.Save()
     return name
 
 
+def ensure_first_launch_shortcut(desktop=None):
+    """Create once per executable location; do not restore deliberately deleted links."""
+    if not getattr(sys, "frozen", False):
+        return False
+    executable = str(Path(sys.executable).resolve())
+    marker = settings_path().parent / "desktop-shortcut.json"
+    try:
+        previous = json.loads(marker.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        previous = None
+    if isinstance(previous, dict) and previous.get("executable") == executable:
+        return False
+    create_desktop_shortcut(desktop=desktop)
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    temporary = marker.with_suffix(".tmp")
+    temporary.write_text(json.dumps({"executable": executable}, ensure_ascii=False), encoding="utf-8")
+    temporary.replace(marker)
+    return True
+
+
 class InstanceGuard:
     def __init__(self):
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)

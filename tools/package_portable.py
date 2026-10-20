@@ -11,7 +11,7 @@ from product import APP_NAME, VERSION
 
 def main():
     directory = ROOT / "dist" / APP_NAME
-    files = [directory / name for name in (APP_NAME + ".exe", "portable.flag", "Create Desktop Shortcut.cmd", "README.md", "THIRD_PARTY.md", "CHANGELOG.md", "assets/deskrec-buddy.svg")]
+    files = [directory / name for name in (APP_NAME + ".exe", "portable.flag", "README.md", "THIRD_PARTY.md", "CHANGELOG.md", "assets/deskrec-buddy.svg")]
     files += sorted(file for file in (directory / "_internal").rglob("*") if file.is_file())
     files += sorted(file for file in (directory / "LICENSES").rglob("*") if file.is_file())
     archive = ROOT / "release" / f"DeskRec-Buddy-{VERSION}-portable.zip"

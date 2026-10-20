@@ -1,4 +1,4 @@
-param([string]$Setup = 'release\DeskRec-Buddy-1.0.0-setup.exe')
+param([string]$Setup = 'release\DeskRec-Buddy-1.0.1-setup.exe')
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 Set-Location -LiteralPath $projectRoot
@@ -10,14 +10,19 @@ if (Test-Path -LiteralPath $registryKey) { throw 'An existing DeskRec Buddy inst
 $shell = New-Object -ComObject WScript.Shell
 $desktopLink = Join-Path $shell.SpecialFolders.Item('Desktop') 'DeskRec Buddy.lnk'
 $menuLink = Join-Path ([Environment]::GetFolderPath('Programs')) 'DeskRec Buddy.lnk'
-if ((Test-Path -LiteralPath $desktopLink) -or (Test-Path -LiteralPath $menuLink)) { throw 'Existing user shortcuts must not be replaced by this test.' }
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+$savedLinks = @{}
+foreach ($link in @($desktopLink, $menuLink)) {
+    if (Test-Path -LiteralPath $link) { $savedLinks[$link] = [IO.File]::ReadAllBytes($link) }
+}
 $settings = Join-Path $env:LOCALAPPDATA 'DeskRec Buddy\deskrec-settings.json'
 $savedSettings = if (Test-Path -LiteralPath $settings) { [IO.File]::ReadAllBytes($settings) } else { $null }
+$shortcutMarker = Join-Path $env:LOCALAPPDATA 'DeskRec Buddy\desktop-shortcut.json'
+$savedMarker = if (Test-Path -LiteralPath $shortcutMarker) { [IO.File]::ReadAllBytes($shortcutMarker) } else { $null }
 $application = $null
 
 function Run-Setup([string]$LogName, [bool]$ExpectSuccess = $true) {
-    $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /SP- /NORESTART /TASKS=desktopicon /DIR="' + $installDirectory + '" /LOG="' + (Join-Path $testRoot $LogName) + '"'
+    $arguments = '/VERYSILENT /SUPPRESSMSGBOXES /SP- /NORESTART /DIR="' + $installDirectory + '" /LOG="' + (Join-Path $testRoot $LogName) + '"'
     $process = Start-Process -FilePath $Setup -ArgumentList $arguments -WindowStyle Hidden -PassThru
     if (-not $process.WaitForExit(60000)) {
         & taskkill /PID $process.Id /T /F | Out-Null
@@ -35,7 +40,7 @@ try {
     if (Test-Path -LiteralPath (Join-Path $installDirectory 'portable.flag')) { throw 'Installed app incorrectly marked portable.' }
     if (-not (Test-Path -LiteralPath $registryKey)) { throw 'Uninstaller registry entry missing.' }
     $metadata = Get-ItemProperty -LiteralPath $registryKey
-    if ($metadata.DisplayName -ne 'DeskRec Buddy' -or $metadata.DisplayVersion -ne '1.0.0' -or $metadata.Publisher -ne 'rootforged.io') { throw 'Incorrect installed product metadata.' }
+    if ($metadata.DisplayName -ne 'DeskRec Buddy' -or $metadata.DisplayVersion -ne '1.0.1' -or $metadata.Publisher -ne 'RootforgeIO' -or $metadata.URLInfoAbout -ne 'https://github.com/RootforgeIO') { throw 'Incorrect installed product metadata.' }
     foreach ($link in @($desktopLink, $menuLink)) {
         if (-not (Test-Path -LiteralPath $link)) { throw "Shortcut missing: $link" }
         $shortcut = $shell.CreateShortcut($link)
@@ -55,6 +60,7 @@ try {
     if ($application.HasExited) { throw 'Update check terminated the running app.' }
     if (-not $application.CloseMainWindow() -or -not $application.WaitForExit(15000)) { throw 'Installed GUI did not close gracefully.' }
     $application = $null
+    if (-not (Test-Path -LiteralPath $shortcutMarker) -or (Get-Content -LiteralPath $shortcutMarker -Raw | ConvertFrom-Json).executable -ne $executable) { throw 'First-launch shortcut marker missing or incorrect.' }
     Run-Setup 'upgrade.log' | Out-Null
     if ((Get-Content -LiteralPath $settings -Raw | ConvertFrom-Json).microphone_gain -ne '300%') { throw 'Reinstallation overwrote user settings.' }
     $capture = Start-Process -FilePath $executable -ArgumentList ('--smoke "' + $recordings + '" --seconds 3') -WindowStyle Hidden -PassThru
@@ -78,4 +84,7 @@ try {
     if (Test-Path -LiteralPath $remainingUninstaller) { Start-Process -FilePath $remainingUninstaller -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -WindowStyle Hidden -Wait }
     if ($null -ne $savedSettings) { [IO.File]::WriteAllBytes($settings, $savedSettings) }
     elseif (Test-Path -LiteralPath $settings) { Remove-Item -LiteralPath $settings }
+    if ($null -ne $savedMarker) { [IO.File]::WriteAllBytes($shortcutMarker, $savedMarker) }
+    elseif (Test-Path -LiteralPath $shortcutMarker) { Remove-Item -LiteralPath $shortcutMarker }
+    foreach ($link in $savedLinks.Keys) { [IO.File]::WriteAllBytes($link, $savedLinks[$link]) }
 }

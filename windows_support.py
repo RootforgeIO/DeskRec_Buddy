@@ -115,6 +115,8 @@ user32.IsWindowVisible.argtypes = [wintypes.HWND]
 user32.IsIconic.argtypes = [wintypes.HWND]
 user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_ssize_t]
 user32.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetWindowLongPtrW.restype = ctypes.c_ssize_t
 user32.SystemParametersInfoW.argtypes = [wintypes.UINT, wintypes.UINT, ctypes.c_void_p, wintypes.UINT]
 
 
@@ -134,6 +136,26 @@ def keep_on_top(window, detach=False):
     if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
         user32.ShowWindow(hwnd, 4)
     user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0010 | 0x0001 | 0x0002 | 0x0040)
+
+
+def show_in_taskbar(window):
+    """Give the borderless recording panel its own taskbar entry."""
+    hwnd = int(window.frame(), 0)
+    user32.ShowWindow(hwnd, 0)
+    user32.SetWindowLongPtrW(hwnd, -8, 0)
+    style = user32.GetWindowLongPtrW(hwnd, -20)
+    user32.SetWindowLongPtrW(hwnd, -20, (style | 0x40000) & ~0x80)
+    user32.ShowWindow(hwnd, 4)
+    user32.SetWindowPos(hwnd, -1, 0, 0, 0, 0, 0x0010 | 0x0001 | 0x0002 | 0x0020)
+
+
+def minimize_to_taskbar(window):
+    # Tk disallows iconify() on overrideredirect windows; Windows supports it.
+    user32.ShowWindow(int(window.frame(), 0), 6)
+
+
+def is_minimized(window):
+    return bool(user32.IsIconic(int(window.frame(), 0)))
 
 
 user32.RegisterHotKey.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.UINT, wintypes.UINT]

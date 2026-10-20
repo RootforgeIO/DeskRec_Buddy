@@ -24,7 +24,7 @@ def main():
         assert package.testzip() is None
         names = package.namelist()
         assert all(name.startswith(APP_NAME + "/") and ".." not in Path(name).parts for name in names)
-        allowed = {APP_NAME + ".exe", "portable.flag", "Create Desktop Shortcut.cmd", "README.md", "THIRD_PARTY.md", "CHANGELOG.md", "_internal", "LICENSES", "assets"}
+        allowed = {APP_NAME + ".exe", "portable.flag", "README.md", "THIRD_PARTY.md", "CHANGELOG.md", "_internal", "LICENSES", "assets"}
         assert all(Path(name).parts[1] in allowed for name in names), "Unexpected development files in the public package"
         assert not any("deskrec-settings.json" in name or "/logs/" in name or ".deskrec-" in name for name in names)
         assert any("/LICENSES/" in name for name in names)
@@ -32,7 +32,6 @@ def main():
     directory = destination / APP_NAME
     executable = directory / (APP_NAME + ".exe")
     assert (directory / "portable.flag").is_file()
-    assert (directory / "Create Desktop Shortcut.cmd").is_file()
     assert hashlib.sha256(executable.read_bytes()).digest() == hashlib.sha256((ROOT / "dist" / APP_NAME / executable.name).read_bytes()).digest()
     environment = dict(os.environ)
     for key in ("PYTHONPATH", "PYTHONHOME"):

@@ -9,8 +9,8 @@
 AppId={{6C799F17-789D-4AC0-8E25-799A94498439}
 AppName=DeskRec Buddy
 AppVersion={#AppVersion}
-AppPublisher=rootforged.io
-AppPublisherURL=https://rootforged.io
+AppPublisher=RootforgeIO
+AppPublisherURL=https://github.com/RootforgeIO
 VersionInfoVersion={#AppVersion}
 VersionInfoDescription=DeskRec Buddy Setup
 DefaultDirName={localappdata}\Programs\DeskRec Buddy
@@ -39,9 +39,6 @@ DisableWelcomePage=no
 Name: russian; MessagesFile: compiler:Languages\Russian.isl
 Name: english; MessagesFile: compiler:Default.isl
 
-[Tasks]
-Name: desktopicon; Description: {cm:CreateDesktopIcon}; GroupDescription: {cm:AdditionalIcons}
-
 [Files]
 Source: {#SourceRoot}\DeskRec Buddy.exe; DestDir: {app}; Flags: ignoreversion
 Source: {#SourceRoot}\_internal\*; DestDir: {app}\_internal; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -53,7 +50,7 @@ Source: {#SourceRoot}\assets\deskrec-buddy.svg; DestDir: {app}\assets; Flags: ig
 
 [Icons]
 Name: {autoprograms}\DeskRec Buddy; Filename: {app}\DeskRec Buddy.exe; WorkingDir: {app}
-Name: {autodesktop}\DeskRec Buddy; Filename: {app}\DeskRec Buddy.exe; WorkingDir: {app}; Tasks: desktopicon
+Name: {autodesktop}\DeskRec Buddy; Filename: {app}\DeskRec Buddy.exe; WorkingDir: {app}
 
 [Run]
 Filename: {app}\DeskRec Buddy.exe; Description: {cm:LaunchProgram,DeskRec Buddy}; Flags: nowait postinstall skipifsilent

@@ -64,6 +64,8 @@ def main():
                 assert widget.winfo_y() + widget.winfo_height() <= app.winfo_height(), "A settings control is clipped at Windows' current DPI"
             assert app.speaker_box.get() and app.microphone_box.get()
             assert app.microphone_gain_var.get() == "200%"
+            assert not any(isinstance(widget, ttk.Button) and "Ярлык" in widget.cget("text")
+                           for widget in app.content_frame.winfo_children())
             app.microphone_gain_box.set("300%")
             app.microphone_gain_box.event_generate("<<ComboboxSelected>>")
             app.update()
@@ -98,7 +100,7 @@ def main():
             check_exclusion(app.overlay.windows)
             assert abs(float(app.overlay.bar.attributes("-alpha")) - 0.9) < 0.01
             left, top, right, bottom = work_area(app)
-            expected = app.overlay.clamp_position(right-340-20, (top+bottom-58)//2)
+            expected = app.overlay.clamp_position(right-app.overlay.width-20, (top+bottom-app.overlay.height)//2)
             assert (app.overlay.bar.winfo_x(), app.overlay.bar.winfo_y()) == expected
             for widget, dx, dy in ((app.overlay.bar, -160, -100), (app.overlay.label, 20, 30)):
                 old_x, old_y = app.overlay.bar.winfo_x(), app.overlay.bar.winfo_y()
@@ -111,6 +113,24 @@ def main():
             assert json.loads(settings_path.read_text(encoding="utf-8"))["panel_position"] == list(saved_position)
             hwnd = int(app.overlay.bar.frame(), 0)
             assert ctypes.windll.user32.GetWindowLongPtrW(hwnd, -8) == 0, "Toolbar is owned by the minimized setup window"
+            assert ctypes.windll.user32.GetWindowLongW(hwnd, -20) & 0x40000, "Panel needs a taskbar entry"
+            # An intentional minimize must survive watchdog updates and panel recreation.
+            app.overlay.minimize_button.invoke()
+            start_hidden = time.monotonic()
+            pump_until(app, lambda: time.monotonic() - start_hidden > 1.2)
+            assert ctypes.windll.user32.IsIconic(hwnd), "Watchdog restored a deliberately minimized panel"
+            assert app.session and app.recording_active
+            old_bar = app.overlay.bar
+            old_bar.destroy()
+            pump_until(app, lambda: app.overlay.bar is not old_bar)
+            hwnd = int(app.overlay.bar.frame(), 0)
+            assert ctypes.windll.user32.IsIconic(hwnd), "Recreated panel lost the user's minimized state"
+            # SW_RESTORE is the same native restoration used by the taskbar.
+            ctypes.windll.user32.ShowWindow(hwnd, 9)
+            pump_until(app, lambda: not app.panel_minimized)
+            assert ctypes.windll.user32.IsWindowVisible(hwnd)
+            check_exclusion(app.overlay.windows)
+            assert (app.overlay.bar.winfo_x(), app.overlay.bar.winfo_y()) == saved_position
             ctypes.windll.user32.ShowWindow(hwnd, 0)
             pump_until(app, lambda: ctypes.windll.user32.IsWindowVisible(hwnd))
             assert ctypes.windll.user32.GetWindowLongW(hwnd, -20) & 8, "Toolbar must stay topmost"
@@ -121,7 +141,7 @@ def main():
             assert (app.overlay.bar.winfo_x(), app.overlay.bar.winfo_y()) == saved_position
             start = time.monotonic()
             pump_until(app, lambda: time.monotonic() - start > 1.5)
-            stop_button = next(widget for widget in app.overlay.bar.winfo_children() if isinstance(widget, ttk.Button))
+            stop_button = app.overlay.stop_button
             sessions = [app.session]
             with hold_live_file(app.session.output_path):
                 stop_button.invoke()
@@ -148,7 +168,7 @@ def main():
             sessions.append(app.session)
             wait_start = time.monotonic()
             pump_until(app, lambda: time.monotonic() - wait_start > 1)
-            ctypes.windll.user32.ShowWindow(int(app.overlay.bar.frame(), 0), 0)
+            app.overlay.minimize_button.invoke()
             # Generate Ctrl+Shift+F9 through Windows, including key-up events.
             keyboard = ctypes.windll.user32.keybd_event
             keyboard.argtypes = [ctypes.c_ubyte, ctypes.c_ubyte, ctypes.c_uint, ctypes.c_size_t]
@@ -172,7 +192,7 @@ def main():
                 assert reopened.microphone_gain_var.get() == "300%"
             finally:
                 reopened.destroy()
-            print(f"PASS: region selection, toolbar recovery/topmost, taskbar stop, global hotkey and three MP4 decodes: {destination}")
+            print(f"PASS: region selection, native panel minimize/restore/recovery, capture exclusion, taskbar stop, global hotkey and three MP4 decodes: {destination}")
     finally:
         if app.session:
             app.session.stop_event.set()
